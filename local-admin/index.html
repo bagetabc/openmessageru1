@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Telegram Local Admin — Test Assets</title>
+<style>
+:root{color-scheme:dark;font:15px/1.5 system-ui,Segoe UI,sans-serif;background:#10151e;color:#e8edf5}
+*{box-sizing:border-box}body{margin:0;padding:28px;max-width:980px;margin-inline:auto}
+h1{font-size:25px;margin:0 0 6px}.muted{color:#98a5b8}.card{background:#192231;border:1px solid #2b394d;border-radius:14px;padding:18px;margin:16px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+label{display:block;margin:8px 0;color:#cbd5e1}input,select,button{font:inherit;border-radius:9px;padding:10px;border:1px solid #3a4a61;background:#111a27;color:#f4f7fb;width:100%}
+button{background:#2b6de0;border:0;font-weight:650;cursor:pointer;margin-top:12px}button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;align-items:center;gap:10px}.row input[type=checkbox]{width:auto}
+.stat{font-size:22px;font-weight:700}.notice{background:#332a18;border:1px solid #665126;color:#f5d99c;padding:12px;border-radius:10px}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:9px;border-bottom:1px solid #2b394d;overflow-wrap:anywhere}
+.hidden{display:none}.success{color:#8ee0ad}.error{color:#ff9e9e}
+</style>
+</head>
+<body>
+<h1>Локальная админ-панель</h1>
+<div class="muted">Только тестовые активы · не подключается к Telegram или Fragment</div>
+<div class="notice" style="margin-top:16px">Все операции записываются только в локальную SQLite-базу. TEST-888 — фиктивный идентификатор, не телефонный номер.</div>
+<section class="card">
+<label>Локальный admin token</label><input id="token" type="password" autocomplete="off" placeholder="Вставь LOCAL_ADMIN_TOKEN">
+<button id="connect">Подключиться</button><p id="status" class="muted"></p>
+</section>
+<section class="card">
+<h2>Разрешить выдачу</h2>
+<div class="grid">
+<label class="row"><input type="checkbox" id="starsEnabled" checked> ⭐ Тестовые Stars</label>
+<label class="row"><input type="checkbox" id="usernameEnabled" checked> 💎 Локальные Username</label>
+<label class="row"><input type="checkbox" id="phoneEnabled" checked> 📱 TEST-888 ID</label>
+</div><button id="saveSettings">Сохранить галочки</button>
+</section>
+<section class="card">
+<h2>Выдать тестовый актив</h2>
+<div class="grid">
+<div><label>ID локального пользователя</label><input id="userId" placeholder="например, user-001"></div>
+<div><label>Тип актива</label><select id="assetType"><option value="stars">⭐ Stars (тестовый баланс)</option><option value="username">💎 Username (локальный)</option><option value="phone">📱 TEST-888 ID</option></select></div>
+<div id="amountWrap"><label>Количество Stars</label><input id="amount" type="number" min="1" max="1000000" value="100"></div>
+<div id="usernameWrap" class="hidden"><label>Username</label><input id="username" placeholder="my_test_name"></div>
+</div><button id="issue">Выдать</button><p id="issueStatus"></p>
+</section>
+<section class="card"><h2>Баланс тестовых Stars</h2><div id="balances" class="muted">Нет данных</div></section>
+<section class="card"><h2>История выдач</h2><div style="overflow:auto"><table><thead><tr><th>ID</th><th>Пользователь</th><th>Тип</th><th>Значение</th><th>Дата</th></tr></thead><tbody id="history"></tbody></table></div></section>
+<script>
+const $=id=>document.getElementById(id);
+const token=()=> $('token').value;
+async function api(path,body){
+ const response=await fetch(path,{method:body?'POST':'GET',headers:{'X-Admin-Token':token(),'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+ const data=await response.json();if(!response.ok)throw new Error(data.error||response.statusText);return data;
+}
+function render(data){
+ $('starsEnabled').checked=data.settings.stars;
+ $('usernameEnabled').checked=data.settings.username;
+ $('phoneEnabled').checked=data.settings.phone;
+ $('balances').innerHTML=data.balances.length?data.balances.map(x=>'<div class="row"><span>'+escapeHtml(x.user_id)+'</span><span class="stat">'+x.stars.toLocaleString()+' ⭐</span></div>').join(''):'Нет данных';
+ $('history').innerHTML=data.assets.map(x=>'<tr><td>'+x.id+'</td><td>'+escapeHtml(x.user_id)+'</td><td>'+escapeHtml(x.asset_type)+'</td><td>'+escapeHtml(x.asset_value)+'</td><td>'+escapeHtml(x.created_at)+'</td></tr>').join('');
+}
+function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+$('assetType').addEventListener('change',()=>{$('amountWrap').classList.toggle('hidden',$('assetType').value!=='stars');$('usernameWrap').classList.toggle('hidden',$('assetType').value!=='username');});
+$('connect').onclick=async()=>{try{render(await api('/api/state'));$('status').textContent='Подключено';$('status').className='success';}catch(e){$('status').textContent=e.message;$('status').className='error';}};
+$('saveSettings').onclick=async()=>{try{render(await api('/api/settings',{settings:{stars:$('starsEnabled').checked,username:$('usernameEnabled').checked,phone:$('phoneEnabled').checked}}));$('status').textContent='Настройки сохранены';}catch(e){$('status').textContent=e.message;}};
+$('issue').onclick=async()=>{try{const type=$('assetType').value;const body={user_id:$('userId').value.trim(),asset_type:type};if(type==='stars')body.amount=Number($('amount').value);if(type==='username')body.value=$('username').value;render(await api('/api/issue',body));$('issueStatus').textContent='Тестовый актив выдан';$('issueStatus').className='success';}catch(e){$('issueStatus').textContent=e.message;$('issueStatus').className='error';}};
+</script>
+</body></html>
